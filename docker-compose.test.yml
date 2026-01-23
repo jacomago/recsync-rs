@@ -1,0 +1,41 @@
+version: '3.8'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.10
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+
+  channelfinder:
+    build: ../ChannelFinderService
+    ports:
+      - "8080:8080"
+    environment:
+      - ELASTIC_HOST=elasticsearch
+      - ELASTIC_PORT=9200
+    depends_on:
+      - elasticsearch
+
+  recceiver-rs:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5051:5051"
+      - "5049:5049/udp"
+    environment:
+      - CF_URL=http://channelfinder:8080/ChannelFinder
+      - CF_USER=recceiver
+      - RUST_LOG=info
+    volumes:
+      - ./tests/recceiver_test.conf:/etc/recceiver.conf
+    command: ["recceiver", "/etc/recceiver.conf"]
+    depends_on:
+      - channelfinder
+
+  reccaster-py:
+    build: ../recsync/client
+    depends_on:
+      - recceiver-rs
