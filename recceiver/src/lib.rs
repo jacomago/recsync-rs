@@ -5,3 +5,4 @@ pub mod session;
 pub mod sqlite_backend;
 pub mod synchronizer;
 pub mod channelfinder_backend;
+pub mod config;
