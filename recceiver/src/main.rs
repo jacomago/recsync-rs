@@ -1,13 +1,19 @@
 mod announcer;
 mod server;
 mod session;
+mod backend;
+mod synchronizer;
 
 use announcer::Announcer;
 use server::Server;
+use backend::MockBackend;
+use synchronizer::Synchronizer;
 
 use std::error::Error;
 use tracing::{info, error};
 use std::net::Ipv4Addr;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -29,9 +35,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
     info!("UDP Announcer started on port 5049");
 
+    // Initialize Backend and Synchronizer
+    let backend = Arc::new(MockBackend::new());
+    let (sync_tx, sync_rx) = mpsc::channel(100);
+    let synchronizer = Synchronizer::new(backend, sync_rx);
+    tokio::spawn(async move {
+        synchronizer.run().await;
+    });
+
     // Start TCP Server
     let tcp_server_addr = format!("0.0.0.0:{}", server_port_tcp);
-    let server = Server::new(&tcp_server_addr).await?;
+    let server = Server::new(&tcp_server_addr, sync_tx).await?;
     server.run().await;
 
     Ok(())

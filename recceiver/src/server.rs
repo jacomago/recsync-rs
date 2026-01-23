@@ -8,12 +8,15 @@
 use tokio::net::TcpListener;
 use tracing::{error, info};
 use std::io;
+use tokio::sync::mpsc::Sender;
 
 use crate::session::Session;
+use crate::backend::Transaction;
 
 /// Server listens for incoming TCP connections from reccaster clients.
 pub struct Server {
     listener: TcpListener,
+    sync_tx: Sender<Transaction>,
 }
 
 impl Server {
@@ -22,11 +25,11 @@ impl Server {
     /// # Arguments
     ///
     /// * `addr` - The address (e.g., "0.0.0.0:5051") to bind the TCP listener to.
-    ///
-    pub async fn new(addr: &str) -> io::Result<Self> {
+    /// * `sync_tx` - The channel to send transactions to the Synchronizer.
+    pub async fn new(addr: &str, sync_tx: Sender<Transaction>) -> io::Result<Self> {
         let listener = TcpListener::bind(addr).await?;
         info!("Listening on {}", addr);
-        Ok(Self { listener })
+        Ok(Self { listener, sync_tx })
     }
 
     /// Starts accepting incoming connections and spawns a new task for each.
@@ -35,8 +38,9 @@ impl Server {
             match self.listener.accept().await {
                 Ok((stream, peer_addr)) => {
                     info!("Accepted connection from: {}", peer_addr);
+                    let tx = self.sync_tx.clone();
                     tokio::spawn(async move {
-                        let _ = Session::new(stream, peer_addr).run().await;
+                        let _ = Session::new(stream, peer_addr, tx).run().await;
                     });
                 }
                 Err(e) => error!("Failed to accept connection: {}", e),

@@ -7,12 +7,14 @@
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::codec::Framed;
-use wire::{MessageCodec, Message, ClientGreet, ServerGreet, Ping, Pong};
+use wire::{MessageCodec, Message, ClientGreet, ServerGreet, Ping, Pong, AddRecordType};
 use tracing::{debug, info, error};
 use std::io;
 use std::net::SocketAddr;
 use futures_util::stream::StreamExt;
 use futures_util::sink::SinkExt; 
+use crate::backend::{Transaction, RecordUpdate};
+use tokio::sync::mpsc::Sender;
 
 /// Defines the different states of a client session.
 #[derive(Debug, PartialEq)]
@@ -28,7 +30,11 @@ pub struct Session<S> {
     state: SessionState,
     client_key: Option<u32>,
     peer_addr: SocketAddr,
-    // TODO: Add store/aggregation of IOC data here
+    
+    // Accumulate updates here
+    tx_builder: Transaction,
+    // Channel to send committed transactions to the Synchronizer
+    sync_tx: Sender<Transaction>,
 }
 
 impl<S> Session<S> 
@@ -36,7 +42,7 @@ where
     S: AsyncRead + AsyncWrite + Unpin
 {
     /// Creates a new session from a stream (e.g., TcpStream).
-    pub fn new(stream: S, peer_addr: SocketAddr) -> Self {
+    pub fn new(stream: S, peer_addr: SocketAddr, sync_tx: Sender<Transaction>) -> Self {
         let codec = MessageCodec;
         let framed_stream = Framed::new(stream, codec);
         Self { 
@@ -44,6 +50,8 @@ where
             state: SessionState::Greeting,
             client_key: None,
             peer_addr,
+            tx_builder: Transaction::new(),
+            sync_tx,
         }
     }
 
@@ -86,6 +94,7 @@ where
                         info!("Received ClientGreet with key: {}", serv_key);
                         self.client_key = Some(serv_key);
                         self.state = SessionState::Upload;
+                        // Mark transaction as initial if needed (not tracked here yet)
                         Ok(())
                     }
                     _ => {
@@ -96,23 +105,45 @@ where
             }
             SessionState::Upload => {
                 match message {
-                    Message::AddRecord(_) => {
-                        info!("Received AddRecord message.");
-                        // TODO: Process AddRecord
+                    Message::AddRecord(rec) => {
+                        let update = self.tx_builder.updates.entry(rec.recid).or_default();
+                        if rec.atype == (AddRecordType::Record as u8) {
+                            update.name = Some(rec.rname);
+                            update.rtype = Some(rec.rtype);
+                        } else if rec.atype == (AddRecordType::Alias as u8) {
+                            // For alias, rname is the alias
+                            update.aliases.push(rec.rname);
+                        }
                         Ok(())
                     }
-                    Message::DelRecord(_) => {
-                        info!("Received DelRecord message.");
-                        // TODO: Process DelRecord
+                    Message::DelRecord(rec) => {
+                        self.tx_builder.records_to_delete.insert(rec.recid);
                         Ok(())
                     }
-                    Message::AddInfo(_) => {
-                        info!("Received AddInfo message.");
-                        // TODO: Process AddInfo
+                    Message::AddInfo(info) => {
+                        if info.recid == 0 {
+                            self.tx_builder.client_infos.insert(info.key, info.value);
+                        } else {
+                            let update = self.tx_builder.updates.entry(info.recid).or_default();
+                            update.properties.insert(info.key, info.value);
+                        }
                         Ok(())
                     }
                     Message::UploadDone(_) => {
-                        info!("Received UploadDone message.");
+                        info!("Received UploadDone message. Committing transaction.");
+                        self.tx_builder.source_address = Some(self.peer_addr);
+                        self.tx_builder.connected = true;
+                        
+                        // Send the transaction
+                        // We clone because we might want to keep the builder structure or just reset it.
+                        // For now, we take it and replace with new.
+                        let tx = std::mem::replace(&mut self.tx_builder, Transaction::new());
+                        
+                        if let Err(e) = self.sync_tx.send(tx).await {
+                             error!("Failed to send transaction to Synchronizer: {:?}", e);
+                             return Err(io::Error::other("Synchronizer channel closed"));
+                        }
+
                         self.state = SessionState::PingPong;
                         Ok(())
                     }
@@ -125,12 +156,12 @@ where
             SessionState::PingPong => {
                 match message {
                     Message::Ping(Ping { nonce }) => {
-                        info!("Received Ping with nonce: {}", nonce);
+                        // info!("Received Ping with nonce: {}", nonce);
                         if let Err(e) = self.framed_stream.send(Message::Pong(Pong { nonce })).await {
                             error!("Failed to send Pong: {:?}", e);
                             return Err(io::Error::other("Failed to send Pong"));
                         }
-                        info!("Sent Pong with nonce: {}", nonce);
+                        // info!("Sent Pong with nonce: {}", nonce);
                         Ok(())
                     }
                     _ => {
@@ -151,6 +182,7 @@ mod tests {
     use bytes::BytesMut;
     use tokio_util::codec::Encoder;
     use std::net::{IpAddr, Ipv4Addr};
+    use tokio::sync::mpsc;
 
     // Helper to encode a Message using MessageCodec
     fn encode_message(message: Message) -> BytesMut {
@@ -165,15 +197,15 @@ mod tests {
         let client_key = 0xbeef;
         
         // Mock the I/O for the session.
-        // The session first sends a ServerGreet, then expects a ClientGreet.
         let mock_io = Builder::new()
-            .write(&encode_message(Message::ServerGreet(ServerGreet))) // Session sends ServerGreet
-            .read(&encode_message(Message::ClientGreet(ClientGreet { serv_key: client_key }))) // Session receives ClientGreet
+            .write(&encode_message(Message::ServerGreet(ServerGreet))) 
+            .read(&encode_message(Message::ClientGreet(ClientGreet { serv_key: client_key }))) 
             .build();
         
         let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 12345);
+        let (tx, _rx) = mpsc::channel(10);
 
-        let mut session = Session::new(mock_io, peer_addr);
+        let mut session = Session::new(mock_io, peer_addr, tx);
 
         // Run the session until it processes the ClientGreet
         session.run().await?;
