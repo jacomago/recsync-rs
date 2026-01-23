@@ -1,14 +1,7 @@
-mod announcer;
-mod server;
-mod session;
-mod backend;
-mod synchronizer;
-mod sqlite_backend;
-
-use announcer::Announcer;
-use server::Server;
-use sqlite_backend::SqliteBackend;
-use synchronizer::Synchronizer;
+use recceiver::announcer::Announcer;
+use recceiver::server::Server;
+use recceiver::sqlite_backend::SqliteBackend;
+use recceiver::synchronizer::Synchronizer;
 
 use std::error::Error;
 use tracing::{info, error};
