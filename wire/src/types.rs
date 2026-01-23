@@ -23,7 +23,7 @@ pub struct Announcement {
 }
 
 /// Messages ID
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u16)]
 pub enum MessageID {
     ServerGreet = 0x8001,
@@ -91,8 +91,6 @@ pub struct Pong {
 pub struct AddRecord {
     pub recid: u32,
     pub atype: u8,
-    pub rtlen: u8,
-    pub rnlen: u16,
     pub rtype: String,
     pub rname: String,
 }
@@ -108,8 +106,6 @@ pub struct UploadDone;
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddInfo {
     pub recid: u32,
-    pub keylen: u8,
-    pub valen: u16,
     pub key: String,
     pub value: String,
 }
