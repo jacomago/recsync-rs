@@ -15,6 +15,7 @@ use tracing::{info, error};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use wire::ServerKey;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -25,7 +26,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // Configuration for Announcer (UDP)
     let server_ip = Ipv4Addr::new(127, 0, 0, 1); // Localhost for testing
     let server_port_tcp = 5051; // The port the TCP server will listen on
-    let server_key = 12345; // A unique key for this server
+    let server_key = ServerKey(12345); // A unique key for this server
 
     // Start UDP Announcer
     let announcer = Announcer::new(server_ip, server_port_tcp, server_key).await?;

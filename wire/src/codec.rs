@@ -11,7 +11,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use crate::{
     header::MessageHeader, AddInfo, AddRecord, ClientGreet, DelRecord, Message, MessageID, Ping,
-    Pong, ServerGreet, UploadDone,
+    Pong, ServerGreet, UploadDone, ServerKey, WireId,
 };
 
 /// UDP broadcast port
@@ -32,7 +32,7 @@ impl Encoder<Message> for MessageCodec {
                 let header = MessageHeader::new(MessageID::ClientGreet.into(), 8);
                 dst.put(header.as_bytes());
                 dst.put_u32(0); // Padding
-                dst.put_u32(msg.serv_key);
+                dst.put_u32(msg.serv_key.0);
                 Ok(())
             }
             Message::Pong(msg) => {
@@ -52,8 +52,8 @@ impl Encoder<Message> for MessageCodec {
                     + rnlen as usize) as u32;
                 let header = MessageHeader::new(MessageID::AddRecord.into(), len);
                 dst.put(header.as_bytes());
-                dst.put_u32(msg.recid);
-                dst.put_u8(msg.atype);
+                dst.put_u32(msg.recid.0);
+                dst.put_u8(msg.atype as u8);
                 dst.put_u8(rtlen);
                 dst.put_u16(rnlen);
                 dst.put_slice(msg.rtype.as_bytes());
@@ -63,7 +63,7 @@ impl Encoder<Message> for MessageCodec {
             Message::DelRecord(msg) => {
                 let header = MessageHeader::new(MessageID::DelRecord.into(), size_of::<u32>() as u32);
                 dst.put(header.as_bytes());
-                dst.put_u32(msg.recid);
+                dst.put_u32(msg.recid.0);
                 Ok(())
             }
             Message::AddInfo(msg) => {
@@ -77,7 +77,7 @@ impl Encoder<Message> for MessageCodec {
                     + valen as usize) as u32;
                 let header = MessageHeader::new(MessageID::AddInfo.into(), len);
                 dst.put(header.as_bytes());
-                dst.put_u32(msg.recid);
+                dst.put_u32(msg.recid.0);
                 dst.put_u8(keylen);
                 dst.put_u8(0); // Padding
                 dst.put_u16(valen);
@@ -157,7 +157,7 @@ impl Decoder for MessageCodec {
             }
             MessageID::ClientGreet => {
                 body.get_u32(); // Discard padding
-                let serv_key = body.get_u32();
+                let serv_key = ServerKey(body.get_u32());
                 Ok(Some(Message::ClientGreet(ClientGreet { serv_key })))
             }
             MessageID::Pong => {
@@ -166,8 +166,8 @@ impl Decoder for MessageCodec {
             }
 
             MessageID::AddRecord => {
-                let recid = body.get_u32();
-                let atype = body.get_u8();
+                let recid = WireId(body.get_u32());
+                let atype = body.get_u8().into();
                 let rtlen = body.get_u8();
                 let rnlen = body.get_u16();
                 let rtype =
@@ -183,7 +183,7 @@ impl Decoder for MessageCodec {
             }
 
             MessageID::DelRecord => {
-                let recid = body.get_u32();
+                let recid = WireId(body.get_u32());
                 Ok(Some(Message::DelRecord(DelRecord { recid })))
             }
             MessageID::UploadDone => {
@@ -191,7 +191,7 @@ impl Decoder for MessageCodec {
                 Ok(Some(Message::UploadDone(UploadDone)))
             }
             MessageID::AddInfo => {
-                let recid = body.get_u32();
+                let recid = WireId(body.get_u32());
                 let keylen = body.get_u8();
                 body.get_u8(); // Discard padding
                 let valen = body.get_u16();
@@ -211,6 +211,7 @@ impl Decoder for MessageCodec {
 mod tests {
     use super::*;
     use bytes::BytesMut;
+    use crate::{AddRecordType, ServerKey, WireId};
 
     #[test]
     fn test_server_greet_round_trip() {
@@ -238,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_client_greet_round_trip() {
-        let msg = Message::ClientGreet(ClientGreet { serv_key: 12345 });
+        let msg = Message::ClientGreet(ClientGreet { serv_key: ServerKey(12345) });
         let mut codec = MessageCodec;
         let mut buf = BytesMut::new();
 
@@ -263,8 +264,8 @@ mod tests {
     #[test]
     fn test_add_record_round_trip() {
         let msg = Message::AddRecord(AddRecord {
-            recid: 1,
-            atype: 0,
+            recid: WireId(1),
+            atype: AddRecordType::Record,
             rtype: "ai".to_string(),
             rname: "test-record".to_string(),
         });
@@ -279,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_del_record_round_trip() {
-        let msg = Message::DelRecord(DelRecord { recid: 1 });
+        let msg = Message::DelRecord(DelRecord { recid: WireId(1) });
         let mut codec = MessageCodec;
         let mut buf = BytesMut::new();
 
@@ -304,7 +305,7 @@ mod tests {
     #[test]
     fn test_add_info_round_trip() {
         let msg = Message::AddInfo(AddInfo {
-            recid: 1,
+            recid: WireId(1),
             key: "key".to_string(),
             value: "value".to_string(),
         });

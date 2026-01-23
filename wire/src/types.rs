@@ -7,10 +7,28 @@
 
 use std::net::Ipv4Addr;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WireId(pub u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ServerKey(pub u32);
+
 /// AddRecord message type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum AddRecordType {
     Record = 0,
     Alias = 1,
+}
+
+impl From<u8> for AddRecordType {
+    fn from(orig: u8) -> Self {
+        match orig {
+            0 => AddRecordType::Record,
+            1 => AddRecordType::Alias,
+            _ => AddRecordType::Record, // Default or Error? Fallback for now.
+        }
+    }
 }
 
 /// UDP Announcement message structure
@@ -19,7 +37,7 @@ pub struct Announcement {
     pub id: u16,
     pub server_addr: Ipv4Addr,
     pub server_port: u16,
-    pub server_key: u32,
+    pub server_key: ServerKey,
 }
 
 /// Messages ID
@@ -79,7 +97,7 @@ pub struct Ping {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClientGreet {
-    pub serv_key: u32,
+    pub serv_key: ServerKey,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,15 +107,15 @@ pub struct Pong {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddRecord {
-    pub recid: u32,
-    pub atype: u8,
+    pub recid: WireId,
+    pub atype: AddRecordType,
     pub rtype: String,
     pub rname: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DelRecord {
-    pub recid: u32,
+    pub recid: WireId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,7 +123,7 @@ pub struct UploadDone;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddInfo {
-    pub recid: u32,
+    pub recid: WireId,
     pub key: String,
     pub value: String,
 }

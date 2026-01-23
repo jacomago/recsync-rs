@@ -7,7 +7,7 @@
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::codec::Framed;
-use wire::{MessageCodec, Message, ClientGreet, ServerGreet, Ping, Pong, AddRecordType};
+use wire::{MessageCodec, Message, ClientGreet, ServerGreet, Ping, Pong, AddRecordType, WireId, ServerKey};
 use tracing::{debug, info, error};
 use std::io;
 use std::net::SocketAddr;
@@ -29,7 +29,7 @@ enum SessionState {
 pub struct Session<S> {
     framed_stream: Framed<S, MessageCodec>,
     state: SessionState,
-    client_key: Option<u32>,
+    client_key: Option<ServerKey>,
     peer_addr: SocketAddr,
     
     // Accumulate updates here
@@ -38,7 +38,7 @@ pub struct Session<S> {
     sync_tx: Sender<Transaction>,
     
     // Maintain mapping from ID to Name for this session
-    id_to_name: HashMap<u32, String>,
+    id_to_name: HashMap<WireId, String>,
 }
 
 impl<S> Session<S> 
@@ -96,7 +96,7 @@ where
             SessionState::Greeting => {
                 match message {
                     Message::ClientGreet(ClientGreet { serv_key }) => {
-                        info!("Received ClientGreet with key: {}", serv_key);
+                        info!("Received ClientGreet with key: {:?}", serv_key);
                         self.client_key = Some(serv_key);
                         self.state = SessionState::Upload;
                         // Mark transaction as initial if needed (not tracked here yet)
@@ -112,11 +112,11 @@ where
                 match message {
                     Message::AddRecord(rec) => {
                         let update = self.tx_builder.updates.entry(rec.recid).or_default();
-                        if rec.atype == (AddRecordType::Record as u8) {
+                        if rec.atype == AddRecordType::Record {
                             self.id_to_name.insert(rec.recid, rec.rname.clone());
                             update.name = Some(rec.rname);
                             update.rtype = Some(rec.rtype);
-                        } else if rec.atype == (AddRecordType::Alias as u8) {
+                        } else if rec.atype == AddRecordType::Alias {
                             // For alias, rname is the alias
                             update.aliases.push(rec.rname);
                             // Ensure name is set if we know it
@@ -132,19 +132,15 @@ where
                         if let Some(name) = self.id_to_name.get(&rec.recid) {
                             self.tx_builder.records_to_delete.insert(name.clone());
                         } else {
-                            // If we don't know the name, we can't tell the backend what to delete by name.
-                            // This might happen if the record was never sent in this session.
-                            // But usually DelRecord follows a previous session.
-                            // If we can't resolve it, we might skip it or warn.
-                            // For now, let's warn.
-                            tracing::warn!("Received DelRecord for unknown ID: {}", rec.recid);
+                            tracing::warn!("Received DelRecord for unknown ID: {:?}", rec.recid);
                         }
                         Ok(())
                     }
                     Message::AddInfo(info) => {
-                        if info.recid == 0 {
+                        if info.recid == WireId(0) {
                             self.tx_builder.client_infos.insert(info.key, info.value);
-                        } else {
+                        }
+                        else {
                             let update = self.tx_builder.updates.entry(info.recid).or_default();
                             update.properties.insert(info.key, info.value);
                             // Ensure name is set if we know it
@@ -219,7 +215,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_greeting() -> io::Result<()> {
-        let client_key = 0xbeef;
+        let client_key = ServerKey(0xbeef);
         
         // Mock the I/O for the session.
         let mock_io = Builder::new()

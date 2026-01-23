@@ -12,7 +12,7 @@ use std::{collections::HashMap, io, net::{IpAddr, Ipv4Addr, SocketAddr}};
 use tokio::{net::{UdpSocket, TcpStream}, io::Interest}; 
 use tokio_util::codec::Framed;
 use tracing::{debug, error, info};
-use wire::{Announcement, Message, MessageCodec, MSG_MAGIC_ID};
+use wire::{Announcement, Message, MessageCodec, MSG_MAGIC_ID, WireId, ServerKey, AddRecordType};
 use tokio_stream::StreamExt;
 use futures::SinkExt;
 
@@ -85,7 +85,7 @@ impl Reccaster {
                     match msg.unwrap() {
                         Message::ServerGreet(_) => {
                             let _ = framed.send(Message::ClientGreet(wire::ClientGreet { serv_key: key })).await;
-                            debug!("Greet Message with server key: {}", key);
+                            debug!("Greet Message with server key: {:?}", key);
                             self.state = CasterState::Upload;
                         },
                         _ => {
@@ -101,17 +101,17 @@ impl Reccaster {
         if let CasterState::Upload = &mut self.state {
             if let Some(framed) = &mut self.framed {
                 for (i, record) in self.pvs.iter().enumerate() {
-                    let recid: u32 = i as u32 + 100; 
+                    let recid = WireId(i as u32 + 100); 
                     // AddRecord Message
                     let record_name = &record.name;
                     let record_type = &record.r#type;
-                    let msg = Message::AddRecord(wire::AddRecord { recid, atype: wire::AddRecordType::Record as u8, 
+                    let msg = Message::AddRecord(wire::AddRecord { recid, atype: AddRecordType::Record, 
                         rtype: record_type.to_string(), rname: record_name.to_string() });
                     let _ = framed.send(msg.clone()).await;
                     debug!("Sending AddRecord Message: {:?}", msg);
                     // AddRecord alias Message if avaliable
                     if let Some(record_alias) = &record.alias {
-                        let msg = Message::AddRecord(wire::AddRecord { recid, atype: wire::AddRecordType::Alias as u8, 
+                        let msg = Message::AddRecord(wire::AddRecord { recid, atype: AddRecordType::Alias, 
                             rtype: record_type.to_string(), rname: record_alias.to_string() });
                         let _ = framed.send(msg.clone()).await;
                     };
@@ -119,7 +119,7 @@ impl Reccaster {
                     // Send Client Properties
                     if let Some(props) = &self.props {
                         for (key, value) in props {
-                                let msg: Message = Message::AddInfo(wire::AddInfo { recid: 0, key: key.to_string(), value: value.to_string() });
+                                let msg: Message = Message::AddInfo(wire::AddInfo { recid: WireId(0), key: key.to_string(), value: value.to_string() });
                                 let _ = framed.send(msg.clone()).await;
                                 debug!("Sending AddInfo Message: {:?}", msg.clone());
                         }
@@ -199,7 +199,7 @@ impl Reccaster {
 
         let server_port = u16::from_be_bytes([data[8], data[9]]);
 
-        let server_key = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
+        let server_key = ServerKey(u32::from_be_bytes([data[12], data[13], data[14], data[15]]));
 
         Ok(Announcement {
             id,

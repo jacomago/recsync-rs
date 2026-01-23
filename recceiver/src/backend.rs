@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use std::error::Error;
+use wire::WireId;
 
 /// Aggregated updates for a single record ID.
 #[derive(Debug, Clone, Default)]
@@ -31,7 +32,7 @@ pub struct Transaction {
     pub client_infos: HashMap<String, String>,
     
     /// Updates grouped by record ID.
-    pub updates: HashMap<u32, RecordUpdate>,
+    pub updates: HashMap<WireId, RecordUpdate>,
     
     /// Set of record names to delete.
     pub records_to_delete: HashSet<String>,

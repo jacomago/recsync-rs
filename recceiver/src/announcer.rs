@@ -10,14 +10,14 @@ use tokio::net::UdpSocket;
 use tokio::time::{sleep, Duration};
 use std::io;
 
-use wire::SERVER_ANNOUNCEMENT_UDP_PORT;
+use wire::{SERVER_ANNOUNCEMENT_UDP_PORT, ServerKey};
 
 /// Announcer broadcasts the presence of the recceiver server via UDP.
 pub struct Announcer {
     socket: UdpSocket,
     server_addr: Ipv4Addr,
     server_port: u16,
-    server_key: u32,
+    server_key: ServerKey,
 }
 
 impl Announcer {
@@ -34,7 +34,7 @@ impl Announcer {
     pub async fn new(
         server_addr: Ipv4Addr,
         server_port: u16,
-        server_key: u32,
+        server_key: ServerKey,
     ) -> io::Result<Self> {
         let broadcast_addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0);
         let socket = UdpSocket::bind(broadcast_addr).await?;
@@ -62,7 +62,7 @@ impl Announcer {
             buf.extend_from_slice(&self.server_addr.octets()); // Server IP (4s)
             buf.extend_from_slice(&self.server_port.to_be_bytes()); // Server Port (H)
             buf.extend_from_slice(&0u16.to_be_bytes()); // Padding (H)
-            buf.extend_from_slice(&self.server_key.to_be_bytes()); // Server Key (I)
+            buf.extend_from_slice(&self.server_key.0.to_be_bytes()); // Server Key (I)
 
             self.socket.send_to(&buf, broadcast_target).await?;
             sleep(Duration::from_secs(5)).await;
@@ -80,7 +80,7 @@ mod tests {
     async fn test_announcer_broadcast() {
         let server_addr = Ipv4Addr::new(127, 0, 0, 1);
         let server_port = 12345;
-        let server_key = 54321;
+        let server_key = ServerKey(54321);
 
         let announcer = Announcer::new(server_addr, server_port, server_key)
             .await
@@ -114,6 +114,6 @@ mod tests {
 
         // Skip 2 bytes for the second padding (H)
         let announced_key = u32::from_be_bytes([recv_buf[12], recv_buf[13], recv_buf[14], recv_buf[15]]);
-        assert_eq!(announced_key, server_key);
+        assert_eq!(announced_key, server_key.0);
     }
 }
