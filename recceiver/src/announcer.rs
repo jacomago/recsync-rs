@@ -36,7 +36,7 @@ impl Announcer {
         server_port: u16,
         server_key: u32,
     ) -> io::Result<Self> {
-        let broadcast_addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), SERVER_ANNOUNCEMENT_UDP_PORT);
+        let broadcast_addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0);
         let socket = UdpSocket::bind(broadcast_addr).await?;
         socket.set_broadcast(true)?;
 
@@ -57,14 +57,63 @@ impl Announcer {
 
         loop {
             let mut buf = Vec::new();
-            buf.extend_from_slice(&announcement_id.to_be_bytes()); // ID
-            buf.extend_from_slice(&self.server_addr.octets()); // Server IP (4 bytes)
-            buf.extend_from_slice(&self.server_port.to_be_bytes()); // Server Port (2 bytes)
-            buf.extend_from_slice(&self.server_key.to_be_bytes()); // Server Key (4 bytes)
-            buf.extend_from_slice(&[0, 0]); // Padding (2 bytes) - Python struct has H for this
+            buf.extend_from_slice(&announcement_id.to_be_bytes()); // ID (H)
+            buf.extend_from_slice(&0u16.to_be_bytes()); // Padding (H)
+            buf.extend_from_slice(&self.server_addr.octets()); // Server IP (4s)
+            buf.extend_from_slice(&self.server_port.to_be_bytes()); // Server Port (H)
+            buf.extend_from_slice(&0u16.to_be_bytes()); // Padding (H)
+            buf.extend_from_slice(&self.server_key.to_be_bytes()); // Server Key (I)
 
             self.socket.send_to(&buf, broadcast_target).await?;
             sleep(Duration::from_secs(5)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn test_announcer_broadcast() {
+        let server_addr = Ipv4Addr::new(127, 0, 0, 1);
+        let server_port = 12345;
+        let server_key = 54321;
+
+        let announcer = Announcer::new(server_addr, server_port, server_key)
+            .await
+            .unwrap();
+
+        let listener = UdpSocket::bind(format!("0.0.0.0:{}", SERVER_ANNOUNCEMENT_UDP_PORT))
+            .await
+            .unwrap();
+        listener.set_broadcast(true).unwrap();
+
+        tokio::spawn(async move {
+            announcer.start_broadcasting().await.unwrap();
+        });
+
+        let mut recv_buf = [0u8; 1024];
+        let (_len, _) = timeout(Duration::from_secs(6), listener.recv_from(&mut recv_buf))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let expected_id: u16 = 0x5243;
+        let announcement_id = u16::from_be_bytes([recv_buf[0], recv_buf[1]]);
+        assert_eq!(announcement_id, expected_id);
+
+        // Skip 2 bytes for the first padding (H)
+        let announced_addr = Ipv4Addr::new(recv_buf[4], recv_buf[5], recv_buf[6], recv_buf[7]);
+        assert_eq!(announced_addr, server_addr);
+
+        let announced_port = u16::from_be_bytes([recv_buf[8], recv_buf[9]]);
+        assert_eq!(announced_port, server_port);
+
+        // Skip 2 bytes for the second padding (H)
+        let announced_key = u32::from_be_bytes([recv_buf[12], recv_buf[13], recv_buf[14], recv_buf[15]]);
+        assert_eq!(announced_key, server_key);
     }
 }
