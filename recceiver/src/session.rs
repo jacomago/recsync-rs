@@ -13,8 +13,9 @@ use std::io;
 use std::net::SocketAddr;
 use futures_util::stream::StreamExt;
 use futures_util::sink::SinkExt; 
-use crate::backend::{Transaction, RecordUpdate};
+use crate::backend::Transaction;
 use tokio::sync::mpsc::Sender;
+use std::collections::HashMap;
 
 /// Defines the different states of a client session.
 #[derive(Debug, PartialEq)]
@@ -35,6 +36,9 @@ pub struct Session<S> {
     tx_builder: Transaction,
     // Channel to send committed transactions to the Synchronizer
     sync_tx: Sender<Transaction>,
+    
+    // Maintain mapping from ID to Name for this session
+    id_to_name: HashMap<u32, String>,
 }
 
 impl<S> Session<S> 
@@ -52,6 +56,7 @@ where
             peer_addr,
             tx_builder: Transaction::new(),
             sync_tx,
+            id_to_name: HashMap::new(),
         }
     }
 
@@ -108,16 +113,32 @@ where
                     Message::AddRecord(rec) => {
                         let update = self.tx_builder.updates.entry(rec.recid).or_default();
                         if rec.atype == (AddRecordType::Record as u8) {
+                            self.id_to_name.insert(rec.recid, rec.rname.clone());
                             update.name = Some(rec.rname);
                             update.rtype = Some(rec.rtype);
                         } else if rec.atype == (AddRecordType::Alias as u8) {
                             // For alias, rname is the alias
                             update.aliases.push(rec.rname);
+                            // Ensure name is set if we know it
+                            if update.name.is_none() {
+                                if let Some(name) = self.id_to_name.get(&rec.recid) {
+                                    update.name = Some(name.clone());
+                                }
+                            }
                         }
                         Ok(())
                     }
                     Message::DelRecord(rec) => {
-                        self.tx_builder.records_to_delete.insert(rec.recid);
+                        if let Some(name) = self.id_to_name.get(&rec.recid) {
+                            self.tx_builder.records_to_delete.insert(name.clone());
+                        } else {
+                            // If we don't know the name, we can't tell the backend what to delete by name.
+                            // This might happen if the record was never sent in this session.
+                            // But usually DelRecord follows a previous session.
+                            // If we can't resolve it, we might skip it or warn.
+                            // For now, let's warn.
+                            tracing::warn!("Received DelRecord for unknown ID: {}", rec.recid);
+                        }
                         Ok(())
                     }
                     Message::AddInfo(info) => {
@@ -126,6 +147,12 @@ where
                         } else {
                             let update = self.tx_builder.updates.entry(info.recid).or_default();
                             update.properties.insert(info.key, info.value);
+                            // Ensure name is set if we know it
+                            if update.name.is_none() {
+                                if let Some(name) = self.id_to_name.get(&info.recid) {
+                                    update.name = Some(name.clone());
+                                }
+                            }
                         }
                         Ok(())
                     }
@@ -135,8 +162,6 @@ where
                         self.tx_builder.connected = true;
                         
                         // Send the transaction
-                        // We clone because we might want to keep the builder structure or just reset it.
-                        // For now, we take it and replace with new.
                         let tx = std::mem::replace(&mut self.tx_builder, Transaction::new());
                         
                         if let Err(e) = self.sync_tx.send(tx).await {

@@ -33,8 +33,8 @@ pub struct Transaction {
     /// Updates grouped by record ID.
     pub updates: HashMap<u32, RecordUpdate>,
     
-    /// Set of record IDs to delete.
-    pub records_to_delete: HashSet<u32>,
+    /// Set of record names to delete.
+    pub records_to_delete: HashSet<String>,
     
     pub initial: bool,
     pub connected: bool,

@@ -3,10 +3,11 @@ mod server;
 mod session;
 mod backend;
 mod synchronizer;
+mod sqlite_backend;
 
 use announcer::Announcer;
 use server::Server;
-use backend::MockBackend;
+use sqlite_backend::SqliteBackend;
 use synchronizer::Synchronizer;
 
 use std::error::Error;
@@ -16,7 +17,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
 
     info!("Starting recceiver...");
@@ -36,7 +37,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("UDP Announcer started on port 5049");
 
     // Initialize Backend and Synchronizer
-    let backend = Arc::new(MockBackend::new());
+    // let backend = Arc::new(MockBackend::new());
+    let backend = Arc::new(SqliteBackend::new("sqlite://recceiver.db").await?);
+    
     let (sync_tx, sync_rx) = mpsc::channel(100);
     let synchronizer = Synchronizer::new(backend, sync_rx);
     tokio::spawn(async move {
