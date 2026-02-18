@@ -144,14 +144,27 @@ pub struct AddInfo {
     pub value: String,
 }
 
+/// Messages sent from the server to the client
 #[derive(Debug, Clone, PartialEq)]
-pub enum Message {
+pub enum ServerMessage {
     ServerGreet(ServerGreet),
     Ping(Ping),
+}
+
+/// Messages sent from the client to the server
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClientMessage {
     ClientGreet(ClientGreet),
     Pong(Pong),
     AddRecord(AddRecord),
     DelRecord(DelRecord),
     UploadDone(UploadDone),
     AddInfo(AddInfo),
+}
+
+/// Generic message that can be either from server or client
+#[derive(Debug, Clone, PartialEq)]
+pub enum Message {
+    Server(ServerMessage),
+    Client(ClientMessage),
 }
