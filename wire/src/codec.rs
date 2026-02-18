@@ -29,7 +29,7 @@ impl Encoder<Message> for MessageCodec {
                 let header = MessageHeader::new(MessageID::ClientGreet.into(), (size_of::<u32>() + size_of::<ClientGreet>())as u32);
                 dst.put(header.as_bytes());
                 dst.put_u32(0); // Padding
-                dst.put_u32(msg.serv_key);
+                dst.put_u32(msg.serv_key.into());
                 Ok(())
             },
             Message::Pong(msg) => {

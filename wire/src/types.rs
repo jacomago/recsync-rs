@@ -7,6 +7,38 @@
 
 use std::net::Ipv4Addr;
 
+/// Wire ID newtype - represents a message ID on the wire
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct WireId(pub u16);
+
+/// Server key newtype - represents a server's key/identifier
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ServerKey(pub u32);
+
+impl From<u16> for WireId {
+    fn from(value: u16) -> Self {
+        WireId(value)
+    }
+}
+
+impl From<WireId> for u16 {
+    fn from(id: WireId) -> u16 {
+        id.0
+    }
+}
+
+impl From<u32> for ServerKey {
+    fn from(value: u32) -> Self {
+        ServerKey(value)
+    }
+}
+
+impl From<ServerKey> for u32 {
+    fn from(key: ServerKey) -> u32 {
+        key.0
+    }
+}
+
 /// AddRecord message type
 pub enum AddRecordType {
     Record = 0,
@@ -18,7 +50,7 @@ pub enum AddRecordType {
 pub struct Announcement {
     pub server_addr: Ipv4Addr,
     pub server_port: u16,
-    pub server_key: u32,
+    pub server_key: ServerKey,
 }
 
 /// Messages ID
@@ -78,7 +110,7 @@ pub struct Ping {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClientGreet {
-    pub serv_key: u32,
+    pub serv_key: ServerKey,
 }
 
 #[derive(Debug, Clone, PartialEq)]
