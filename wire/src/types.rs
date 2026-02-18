@@ -55,7 +55,7 @@ pub struct Announcement {
 }
 
 /// Messages ID
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum MessageID {
     ServerGreet = 0x8001,
