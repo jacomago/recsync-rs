@@ -5,10 +5,12 @@
 // You must comply with both licenses to use, modify, or distribute this software.
 // See the LICENSE file for details.
 
+mod error;
 mod header;
 mod codec;
 mod types;
 
+pub use error::*;
 pub use types::*;
 pub use codec::*;
 pub use header::*;

@@ -12,3 +12,4 @@ byteorder = "1"
 bytes = "1"
 tokio = { version = "^1", features = ["full"] }
 tokio-util = { version = "0.7.11", features = ["codec"] }
+thiserror = "1"
