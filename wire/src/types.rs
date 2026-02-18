@@ -16,7 +16,6 @@ pub enum AddRecordType {
 /// UDP Announcement message structure
 #[derive(Debug)]
 pub struct Announcement {
-    pub id: u16,
     pub server_addr: Ipv4Addr,
     pub server_port: u16,
     pub server_key: u32,
@@ -91,8 +90,6 @@ pub struct Pong {
 pub struct AddRecord {
     pub recid: u32,
     pub atype: u8,
-    pub rtlen: u8,
-    pub rnlen: u16,
     pub rtype: String,
     pub rname: String,
 }
@@ -108,8 +105,6 @@ pub struct UploadDone;
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddInfo {
     pub recid: u32,
-    pub keylen: u8,
-    pub valen: u16,
     pub key: String,
     pub value: String,
 }
