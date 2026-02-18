@@ -6,7 +6,7 @@
 // See the LICENSE file for details.
 
 use bytes::{Buf, BufMut, BytesMut};
-use std::{io, mem::size_of};
+use std::{io, mem::size_of, convert::TryFrom};
 use tokio_util::codec::{Decoder, Encoder};
 
 use crate::{header::MessageHeader, ClientGreet, Message, MessageID, Ping, Pong, ServerGreet};
@@ -105,21 +105,22 @@ impl Decoder for MessageCodec {
         }
 
         // Match based on `msg_id` and parse accordingly
-        match msg_id.into() {
-            MessageID::ServerGreet => {
+        match MessageID::try_from(msg_id) {
+            Ok(MessageID::ServerGreet) => {
                 let _placeholder = src.get_u8();
                 Ok(Some(Message::ServerGreet(ServerGreet)))
             }
-            MessageID::Ping => {
+            Ok(MessageID::Ping) => {
                 let nonce = src.get_u32();
                 Ok(Some(Message::Ping(Ping { nonce })))
             },
-            MessageID::ClientGreet => unimplemented!("Recceiver related messages are not implemented yet."),
-            MessageID::Pong => unimplemented!("Recceiver related messages are not implemented yet."),
-            MessageID::AddRecord => unimplemented!("Recceiver related messages are not implemented yet."),
-            MessageID::DelRecord => unimplemented!("Recceiver related messages are not implemented yet."),
-            MessageID::UploadDone => unimplemented!("Recceiver related messages are not implemented yet."),
-            MessageID::AddInfo => unimplemented!("Recceiver related messages are not implemented yet."),
+            Ok(MessageID::ClientGreet) => unimplemented!("Recceiver related messages are not implemented yet."),
+            Ok(MessageID::Pong) => unimplemented!("Recceiver related messages are not implemented yet."),
+            Ok(MessageID::AddRecord) => unimplemented!("Recceiver related messages are not implemented yet."),
+            Ok(MessageID::DelRecord) => unimplemented!("Recceiver related messages are not implemented yet."),
+            Ok(MessageID::UploadDone) => unimplemented!("Recceiver related messages are not implemented yet."),
+            Ok(MessageID::AddInfo) => unimplemented!("Recceiver related messages are not implemented yet."),
+            Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
         }
     }
 }

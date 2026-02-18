@@ -6,6 +6,7 @@
 // See the LICENSE file for details.
 
 use std::net::Ipv4Addr;
+use crate::error::ProtocolError;
 
 /// Wire ID newtype - represents a message ID on the wire
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -67,18 +68,20 @@ pub enum MessageID {
     AddInfo = 0x0006,
 }
 
-impl From<u16> for MessageID {
-    fn from(value: u16) -> Self {
+impl TryFrom<u16> for MessageID {
+    type Error = ProtocolError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            0x8001 => MessageID::ServerGreet,
-            0x0001 => MessageID::ClientGreet,
-            0x8002 => MessageID::Ping,
-            0x0002 => MessageID::Pong,
-            0x0003 => MessageID::AddRecord,
-            0x0004 => MessageID::DelRecord,
-            0x0005 => MessageID::UploadDone,
-            0x0006 => MessageID::AddInfo,
-            _ => unimplemented!("Unknown Message ID"),
+            0x8001 => Ok(MessageID::ServerGreet),
+            0x0001 => Ok(MessageID::ClientGreet),
+            0x8002 => Ok(MessageID::Ping),
+            0x0002 => Ok(MessageID::Pong),
+            0x0003 => Ok(MessageID::AddRecord),
+            0x0004 => Ok(MessageID::DelRecord),
+            0x0005 => Ok(MessageID::UploadDone),
+            0x0006 => Ok(MessageID::AddInfo),
+            _ => Err(ProtocolError::UnknownMessageId(value)),
         }
     }
 }
