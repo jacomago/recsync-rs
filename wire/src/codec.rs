@@ -93,6 +93,64 @@ impl MessageCodec {
     }
 }
 
+/// Codec for encoding/decoding client messages
+pub struct ClientCodec;
+
+impl Encoder<ClientMessage> for ClientCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, msg: ClientMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let mut codec = MessageCodec;
+        codec.encode_client(msg, dst)
+    }
+}
+
+/// Codec for decoding server messages
+pub struct ServerCodec;
+
+impl Decoder for ServerCodec {
+    type Item = ServerMessage;
+    type Error = io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if src.len() < 8 {
+            // Not enough data to read header
+            return Ok(None);
+        }
+
+        // Peek at header without consuming
+        let id = u16::from_be_bytes([src[0], src[1]]);
+        let msg_id = u16::from_be_bytes([src[2], src[3]]);
+        let len = u32::from_be_bytes([src[4], src[5], src[6], src[7]]) as usize;
+
+        // Checking if the ID is 'RC'
+        if id != MSG_MAGIC_ID {
+            return Ok(None);
+        }
+
+        if src.len() < 8 + len {
+            // Not enough data to read the full message
+            return Ok(None);
+        }
+
+        // Now consume the bytes
+        src.advance(8);
+
+        // Match based on `msg_id` and parse accordingly
+        match MessageID::try_from(msg_id) {
+            Ok(MessageID::ServerGreet) => {
+                let _placeholder = src.get_u8();
+                Ok(Some(ServerMessage::ServerGreet(ServerGreet)))
+            }
+            Ok(MessageID::Ping) => {
+                let nonce = src.get_u32();
+                Ok(Some(ServerMessage::Ping(Ping { nonce })))
+            },
+            _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unexpected message type for server codec")),
+        }
+    }
+}
+
 impl Decoder for MessageCodec {
     type Item = Message;
     type Error = io::Error;
@@ -103,20 +161,23 @@ impl Decoder for MessageCodec {
             return Ok(None);
         }
 
-        // Read header
-        let id = src.get_u16();
-        let msg_id = src.get_u16();
-        let len = src.get_u32() as usize;
+        // Peek at header without consuming
+        let id = u16::from_be_bytes([src[0], src[1]]);
+        let msg_id = u16::from_be_bytes([src[2], src[3]]);
+        let len = u32::from_be_bytes([src[4], src[5], src[6], src[7]]) as usize;
 
         // Checking if the ID is 'RC'
         if id != MSG_MAGIC_ID {
             return Ok(None);
         }
 
-        if src.len() < len {
-            // Not enough data to read the body
+        if src.len() < 8 + len {
+            // Not enough data to read the full message
             return Ok(None);
         }
+
+        // Now consume the bytes
+        src.advance(8);
 
         // Match based on `msg_id` and parse accordingly
         match MessageID::try_from(msg_id) {
